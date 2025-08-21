@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { registerUser } from '../services/auth.js';
 import AuthLayout from '../components/AuthLayout.jsx';
 import Input from '../components/UI/Input.jsx';
 import Button from '../components/UI/Button.jsx';
 
 export default function Register() {
+  const navigate = useNavigate();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +35,7 @@ export default function Register() {
     try {
       await registerUser({ name, email, password });
       setMessage('Account created successfully.');
-      // TODO: navigate('/dashboard') once Dashboard route exists
+      navigate('/dashboard');
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Registration failed.';
       setMessage(msg);
