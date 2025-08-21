@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { registerUser } from '../services/auth.js';
 import AuthLayout from '../components/AuthLayout.jsx';
 import Input from '../components/UI/Input.jsx';
 import Button from '../components/UI/Button.jsx';
@@ -30,11 +32,12 @@ export default function Register() {
     if (!validate()) return;
     setLoading(true);
     try {
-      // Step 4 will replace this with real API call
-      await new Promise((r) => setTimeout(r, 600));
-      setMessage('Validation passed. API call will be wired in Step 4.');
+      await registerUser({ name, email, password });
+      setMessage('Account created successfully.');
+      // TODO: navigate('/dashboard') once Dashboard route exists
     } catch (err) {
-      setMessage('Registration failed.');
+      const msg = err?.response?.data?.message || err?.message || 'Registration failed.';
+      setMessage(msg);
     } finally {
       setLoading(false);
     }
@@ -95,7 +98,8 @@ export default function Register() {
           {loading ? 'Creating account…' : 'Create account'}
         </Button>
         <div style={{ textAlign: 'center', marginTop: 14, color: '#9ca3af', fontSize: 13 }}>
-          Already have an account? <span style={{ color: '#22d3ee' }}>Login</span>
+          Already have an account?{' '} 
+          <Link to="/login" style={{ color: '#22d3ee' }}>Login</Link>
         </div>
       </form>
     </AuthLayout>

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { loginUser } from '../services/auth.js';
 import AuthLayout from '../components/AuthLayout.jsx';
 import Input from '../components/UI/Input.jsx';
 import Button from '../components/UI/Button.jsx';
@@ -26,11 +28,12 @@ export default function Login() {
     if (!validate()) return;
     setLoading(true);
     try {
-      // Step 4 will replace this with real API call
-      await new Promise((r) => setTimeout(r, 600));
-      setMessage('Validation passed. API call will be wired in Step 4.');
+      await loginUser({ email, password });
+      setMessage('Signed in successfully.');
+      // TODO: navigate('/dashboard') once Dashboard route exists
     } catch (err) {
-      setMessage('Login failed.');
+      const msg = err?.response?.data?.message || err?.message || 'Login failed.';
+      setMessage(msg);
     } finally {
       setLoading(false);
     }
@@ -74,7 +77,8 @@ export default function Login() {
           {loading ? 'Signing in…' : 'Sign in'}
         </Button>
         <div style={{ textAlign: 'center', marginTop: 14, color: '#9ca3af', fontSize: 13 }}>
-          Don’t have an account? <span style={{ color: '#22d3ee' }}>Register</span>
+          Don’t have an account?{' '}
+          <Link to="/register" style={{ color: '#22d3ee' }}>Register</Link>
         </div>
       </form>
     </AuthLayout>
