@@ -19,6 +19,7 @@ import { listTransactions } from '../services/transactions.js';
 import Spinner from '../components/UI/Spinner.jsx';
 import { useToast } from '../components/UI/Toast.jsx';
 import { predictExpenses } from '../services/predict.js';
+import { getCoach, scanRecurring } from '../services/ai.js';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Tooltip, Legend);
 
@@ -31,13 +32,27 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [predicting, setPredicting] = useState(false);
   const [predictDays, setPredictDays] = useState(30);
-  const [provider, setProvider] = useState('heuristic'); // 'auto' | 'gemini' | 'openai' | 'heuristic'
-  const [freeOnly, setFreeOnly] = useState(true);
+  // Prediction uses shared AI settings below
+  // Shared AI settings for Coach and Recurring
+  const [aiProvider, setAiProvider] = useState('heuristic'); // 'auto' | 'gemini' | 'openai' | 'heuristic'
+  const [aiFreeOnly, setAiFreeOnly] = useState(true);
   const [prediction, setPrediction] = useState(null);
   const [lastSource, setLastSource] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+
+  // Coach states
+  const [coachDays, setCoachDays] = useState(90);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coach, setCoach] = useState(null); // { tips, savingsEstimate, suggestedBudget, notes }
+  const [coachSource, setCoachSource] = useState('');
+
+  // Recurring scan states
+  const [recDays, setRecDays] = useState(180);
+  const [recLoading, setRecLoading] = useState(false);
+  const [recItems, setRecItems] = useState([]);
+  const [recSource, setRecSource] = useState('');
 
   const initials = user?.name
     ? user.name
@@ -215,6 +230,8 @@ export default function Dashboard() {
             }}
           />
         </Modal>
+        
+
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>Overview</h2>
           <div style={styles.cards}>
@@ -232,6 +249,14 @@ export default function Dashboard() {
             </div>
           </div>
         </section>
+
+        
+
+        
+
+        
+
+        
 
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>Charts</h2>
@@ -296,34 +321,18 @@ export default function Dashboard() {
           )}
         </section>
 
+        {/* AI consolidated at bottom */}
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>Prediction</h2>
+          <h2 style={styles.sectionTitle}>AI</h2>
+          {/* AI Settings */}
           <div style={styles.card}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: '#9ca3af', fontSize: 12 }}>Days window</span>
-                <input
-                  type="number"
-                  min={7}
-                  max={180}
-                  value={predictDays}
-                  onChange={(e) => setPredictDays(Number(e.target.value))}
-                  style={{
-                    width: 90,
-                    background: 'transparent',
-                    color: '#e5e7eb',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: 8,
-                    padding: '6px 8px',
-                  }}
-                />
-              </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: '#9ca3af', fontSize: 12 }}>Provider</span>
                 <select
-                  value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
-                  disabled={freeOnly}
+                  value={aiProvider}
+                  onChange={(e) => setAiProvider(e.target.value)}
+                  disabled={aiFreeOnly}
                   style={{
                     background: 'transparent',
                     color: '#e5e7eb',
@@ -339,102 +348,359 @@ export default function Dashboard() {
                 </select>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8 }} title="When enabled, only the free heuristic will be used.">
-                <input type="checkbox" checked={freeOnly} onChange={(e) => {
-                  const v = e.target.checked; setFreeOnly(v); if (v) setProvider('heuristic');
+                <input type="checkbox" checked={aiFreeOnly} onChange={(e) => {
+                  const v = e.target.checked; setAiFreeOnly(v); if (v) setAiProvider('heuristic');
                 }} />
                 <span style={{ color: '#9ca3af', fontSize: 12 }}>Free only</span>
               </label>
-              <button
-                onClick={async () => {
-                  setPredicting(true);
-                  setPrediction(null);
-                  try {
-                    // Build call strategy
-                    let result = null;
-                    if (freeOnly || provider === 'heuristic') {
-                      result = await predictExpenses({ days: predictDays });
-                    } else if (provider === 'gemini') {
-                      result = await predictExpenses({ days: predictDays, useGemini: true });
-                    } else if (provider === 'openai') {
-                      result = await predictExpenses({ days: predictDays, useOpenAI: true });
-                    } else {
-                      // auto: try gemini then openai, else heuristic
-                      result = await predictExpenses({ days: predictDays, useGemini: true });
-                      if (result?.source === 'heuristic') {
-                        try {
-                          result = await predictExpenses({ days: predictDays, useOpenAI: true });
-                        } catch (_) {
-                          // ignore and keep heuristic
+            </div>
+          </div>
+
+          {/* Coach */}
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ ...styles.sectionTitle, marginBottom: 8 }}>Coach</h3>
+            <div style={styles.card}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#9ca3af', fontSize: 12 }}>Days window</span>
+                  <input
+                    type="number"
+                    min={7}
+                    max={180}
+                    value={coachDays}
+                    onChange={(e) => setCoachDays(Number(e.target.value))}
+                    style={{
+                      width: 90,
+                      background: 'transparent',
+                      color: '#e5e7eb',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8,
+                      padding: '6px 8px',
+                    }}
+                  />
+                </label>
+                <button
+                  onClick={async () => {
+                    setCoachLoading(true);
+                    setCoach(null);
+                    try {
+                      let payload = { days: coachDays, freeOnly: aiFreeOnly };
+                      if (!aiFreeOnly) payload.provider = aiProvider === 'auto' ? 'auto' : aiProvider;
+                      const result = await getCoach(payload);
+                      setCoach(result?.coach || null);
+                      setCoachSource(result?.source || 'heuristic');
+                      try { toast.success(`Coach ready (${result?.cached ? 'cached, ' : ''}${result?.source || 'heuristic'})`); } catch (_) {}
+                    } catch (e) {
+                      const msg = e?.response?.data?.message || e?.message || 'Coach failed';
+                      try { toast.error(msg); } catch (_) {}
+                    } finally {
+                      setCoachLoading(false);
+                    }
+                  }}
+                  style={styles.iconBtn}
+                  disabled={coachLoading}
+                >
+                  {coachLoading ? 'Analyzing…' : 'Get Tips'}
+                </button>
+                {coachSource ? (
+                  <span style={{
+                    marginLeft: 8,
+                    fontSize: 12,
+                    color: '#22d3ee',
+                    border: '1px solid rgba(34,211,238,0.35)',
+                    borderRadius: 999,
+                    padding: '4px 8px',
+                    lineHeight: 1,
+                  }} title="Last used provider">
+                    {coachSource}
+                  </span>
+                ) : null}
+              </div>
+
+              {coachLoading ? (
+                <div style={{ display: 'grid', placeItems: 'center', minHeight: 120 }}>
+                  <Spinner label={aiFreeOnly || aiProvider === 'heuristic' ? 'Using heuristic…' : aiProvider === 'gemini' ? 'Calling Gemini…' : aiProvider === 'openai' ? 'Calling OpenAI…' : 'Auto…'} />
+                </div>
+              ) : coach ? (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ color: '#9ca3af' }}>Estimated monthly savings</div>
+                    <div style={{ fontWeight: 700, color: '#22d3ee' }}>${Number(coach.savingsEstimate || 0).toFixed(2)}</div>
+                  </div>
+
+                  <div>
+                    <div style={{ color: '#9ca3af', marginBottom: 6 }}>Suggested budget (per category)</div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {Object.keys(coach.suggestedBudget || {}).length === 0 ? (
+                        <div style={{ color: '#9ca3af' }}>No categories available</div>
+                      ) : (
+                        Object.entries(coach.suggestedBudget).map(([cat, v]) => (
+                          <div key={cat} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div>{cat}</div>
+                            <div style={{ color: '#f3f4f6' }}>${Number(v.current || 0).toFixed(2)}
+                              <span style={{ color: '#9ca3af', margin: '0 6px' }}>→</span>
+                              <span style={{ color: '#22d3ee', fontWeight: 700 }}>${Number(v.suggested || 0).toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ color: '#9ca3af', marginBottom: 6 }}>Top tips</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {(coach.tips || []).length === 0 ? (
+                        <div style={{ color: '#9ca3af' }}>No tips available</div>
+                      ) : (
+                        (coach.tips || []).map((t, i) => (
+                          <div key={i} style={{
+                            border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 10,
+                            display: 'grid', gap: 6,
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontWeight: 700 }}>{t.title}</div>
+                              <span style={{
+                                fontSize: 12, border: '1px solid rgba(255,255,255,0.12)', borderRadius: 999,
+                                padding: '2px 8px', color: t.impact === 'high' ? '#fbbf24' : '#9ca3af'
+                              }}>{t.impact || 'medium'}</span>
+                            </div>
+                            <div style={{ color: '#9ca3af' }}>{t.detail}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {(coach.notes || []).length ? (
+                    <div style={{ color: '#9ca3af', fontSize: 12 }}>Notes: {(coach.notes || []).join(' • ')}</div>
+                  ) : null}
+                </div>
+              ) : (
+                <div style={{ color: '#9ca3af' }}>Personalized budget tips will appear here.</div>
+              )}
+            </div>
+          </div>
+
+          {/* Upcoming bills */}
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ ...styles.sectionTitle, marginBottom: 8 }}>Upcoming bills</h3>
+            <div style={styles.card}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#9ca3af', fontSize: 12 }}>Days window</span>
+                  <input
+                    type="number"
+                    min={30}
+                    max={365}
+                    value={recDays}
+                    onChange={(e) => setRecDays(Number(e.target.value))}
+                    style={{
+                      width: 90,
+                      background: 'transparent',
+                      color: '#e5e7eb',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8,
+                      padding: '6px 8px',
+                    }}
+                  />
+                </label>
+                <button
+                  onClick={async () => {
+                    setRecLoading(true);
+                    setRecItems([]);
+                    try {
+                      const payload = { days: recDays, freeOnly: aiFreeOnly };
+                      if (!aiFreeOnly) payload.provider = aiProvider === 'auto' ? 'auto' : aiProvider;
+                      const result = await scanRecurring(payload);
+                      setRecItems(Array.isArray(result?.items) ? result.items : []);
+                      setRecSource(result?.source || 'heuristic');
+                      try { toast.success(`Recurring ready (${result?.source || 'heuristic'})`); } catch (_) {}
+                    } catch (e) {
+                      const msg = e?.response?.data?.message || e?.message || 'Recurring scan failed';
+                      try { toast.error(msg); } catch (_) {}
+                    } finally {
+                      setRecLoading(false);
+                    }
+                  }}
+                  style={styles.iconBtn}
+                  disabled={recLoading}
+                >
+                  {recLoading ? 'Scanning…' : 'Scan'}
+                </button>
+                {recSource ? (
+                  <span style={{
+                    marginLeft: 8,
+                    fontSize: 12,
+                    color: '#22d3ee',
+                    border: '1px solid rgba(34,211,238,0.35)',
+                    borderRadius: 999,
+                    padding: '4px 8px',
+                    lineHeight: 1,
+                  }} title="Last used provider">
+                    {recSource}
+                  </span>
+                ) : null}
+              </div>
+
+              {recLoading ? (
+                <div style={{ display: 'grid', placeItems: 'center', minHeight: 120 }}>
+                  <Spinner label={aiFreeOnly || aiProvider === 'heuristic' ? 'Using heuristic…' : aiProvider === 'gemini' ? 'Calling Gemini…' : aiProvider === 'openai' ? 'Calling OpenAI…' : 'Auto…'} />
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {recItems.length === 0 ? (
+                    <div style={{ color: '#9ca3af' }}>No upcoming bills found. Try increasing the days window.</div>
+                  ) : (
+                    recItems.map((it, idx) => (
+                      <div key={idx} style={{
+                        border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: 10,
+                        display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 8, alignItems: 'center'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{it.merchant}</div>
+                          <div style={{ color: '#9ca3af', fontSize: 12 }}>{it.category || 'Other'}</div>
+                        </div>
+                        <div style={{ color: '#f3f4f6' }}>${Number(it.avgAmount || 0).toFixed(2)}</div>
+                        <div style={{ color: '#9ca3af' }}>{it.cadence}</div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span>{new Date(it.nextDueDate).toLocaleDateString()}</span>
+                          <span style={{
+                            marginLeft: 8,
+                            fontSize: 12,
+                            color: '#22d3ee',
+                            border: '1px solid rgba(34,211,238,0.35)',
+                            borderRadius: 999,
+                            padding: '2px 6px',
+                          }} title="Confidence">
+                            {(Number(it.confidence || 0) * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Prediction */}
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ ...styles.sectionTitle, marginBottom: 8 }}>Prediction</h3>
+            <div style={styles.card}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#9ca3af', fontSize: 12 }}>Days window</span>
+                  <input
+                    type="number"
+                    min={7}
+                    max={180}
+                    value={predictDays}
+                    onChange={(e) => setPredictDays(Number(e.target.value))}
+                    style={{
+                      width: 90,
+                      background: 'transparent',
+                      color: '#e5e7eb',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8,
+                      padding: '6px 8px',
+                    }}
+                  />
+                </label>
+                <button
+                  onClick={async () => {
+                    setPredicting(true);
+                    setPrediction(null);
+                    try {
+                      // Build call strategy using shared AI settings
+                      let result = null;
+                      if (aiFreeOnly || aiProvider === 'heuristic') {
+                        result = await predictExpenses({ days: predictDays });
+                      } else if (aiProvider === 'gemini') {
+                        result = await predictExpenses({ days: predictDays, useGemini: true });
+                      } else if (aiProvider === 'openai') {
+                        result = await predictExpenses({ days: predictDays, useOpenAI: true });
+                      } else {
+                        // auto: try gemini then openai, else heuristic
+                        result = await predictExpenses({ days: predictDays, useGemini: true });
+                        if (result?.source === 'heuristic') {
+                          try {
+                            result = await predictExpenses({ days: predictDays, useOpenAI: true });
+                          } catch (_) {
+                            // ignore and keep heuristic
+                          }
                         }
                       }
+                      const { prediction: p, source } = result || {};
+                      setPrediction({ ...p, source });
+                      if (source) setLastSource(source);
+                      try { toast.success(`Prediction ready (${source || 'heuristic'})`); } catch (_) {}
+                    } catch (e) {
+                      const msg = e?.response?.data?.message || e?.message || 'Prediction failed';
+                      try { toast.error(msg); } catch (_) {}
+                    } finally {
+                      setPredicting(false);
                     }
-                    const { prediction: p, source } = result || {};
-                    setPrediction({ ...p, source });
-                    if (source) setLastSource(source);
-                    try { toast.success(`Prediction ready (${source || 'heuristic'})`); } catch (_) {}
-                  } catch (e) {
-                    const msg = e?.response?.data?.message || e?.message || 'Prediction failed';
-                    try { toast.error(msg); } catch (_) {}
-                  } finally {
-                    setPredicting(false);
-                  }
-                }}
-                style={styles.iconBtn}
-                disabled={predicting}
-              >
-                {predicting ? 'Predicting…' : 'Predict'}
-              </button>
-              {lastSource ? (
-                <span style={{
-                  marginLeft: 8,
-                  fontSize: 12,
-                  color: '#22d3ee',
-                  border: '1px solid rgba(34,211,238,0.35)',
-                  borderRadius: 999,
-                  padding: '4px 8px',
-                  lineHeight: 1,
-                }} title="Last used provider">
-                  {lastSource}
-                </span>
-              ) : null}
-            </div>
+                  }}
+                  style={styles.iconBtn}
+                  disabled={predicting}
+                >
+                  {predicting ? 'Predicting…' : 'Predict'}
+                </button>
+                {lastSource ? (
+                  <span style={{
+                    marginLeft: 8,
+                    fontSize: 12,
+                    color: '#22d3ee',
+                    border: '1px solid rgba(34,211,238,0.35)',
+                    borderRadius: 999,
+                    padding: '4px 8px',
+                    lineHeight: 1,
+                  }} title="Last used provider">
+                    {lastSource}
+                  </span>
+                ) : null}
+              </div>
 
-            {predicting ? (
-              <div style={{ display: 'grid', placeItems: 'center', minHeight: 120 }}>
-                <Spinner label={freeOnly || provider === 'heuristic' ? 'Using heuristic…' : provider === 'gemini' ? 'Calling Gemini…' : provider === 'openai' ? 'Calling OpenAI…' : 'Auto…'} />
-              </div>
-            ) : prediction ? (
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ color: '#9ca3af' }}>Analyzed</div>
-                  <div style={{ fontWeight: 700 }}>{prediction.daysAnalyzed} days</div>
+              {predicting ? (
+                <div style={{ display: 'grid', placeItems: 'center', minHeight: 120 }}>
+                  <Spinner label={aiFreeOnly || aiProvider === 'heuristic' ? 'Using heuristic…' : aiProvider === 'gemini' ? 'Calling Gemini…' : aiProvider === 'openai' ? 'Calling OpenAI…' : 'Auto…'} />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ color: '#9ca3af' }}>Predicted next 30 days</div>
-                  <div style={{ fontWeight: 700, color: '#22d3ee' }}>${Number(prediction.predictedNextMonthTotal || 0).toFixed(2)}</div>
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ color: '#9ca3af', marginBottom: 6 }}>Per-category</div>
-                  <div style={{ display: 'grid', gap: 6 }}>
-                    {Object.keys(prediction.categoryBreakdown || {}).length === 0 ? (
-                      <div style={{ color: '#9ca3af' }}>No categories available</div>
-                    ) : (
-                      Object.entries(prediction.categoryBreakdown).map(([cat, val]) => (
-                        <div key={cat} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <div>{cat}</div>
-                          <div style={{ color: '#f3f4f6' }}>${Number(val.predictedNext30Days ?? val).toFixed(2)}</div>
-                        </div>
-                      ))
-                    )}
+              ) : prediction ? (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ color: '#9ca3af' }}>Analyzed</div>
+                    <div style={{ fontWeight: 700 }}>{prediction.daysAnalyzed} days</div>
                   </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ color: '#9ca3af' }}>Predicted next 30 days</div>
+                    <div style={{ fontWeight: 700, color: '#22d3ee' }}>${Number(prediction.predictedNextMonthTotal || 0).toFixed(2)}</div>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ color: '#9ca3af', marginBottom: 6 }}>Per-category</div>
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {Object.keys(prediction.categoryBreakdown || {}).length === 0 ? (
+                        <div style={{ color: '#9ca3af' }}>No categories available</div>
+                      ) : (
+                        Object.entries(prediction.categoryBreakdown).map(([cat, val]) => (
+                          <div key={cat} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div>{cat}</div>
+                            <div style={{ color: '#f3f4f6' }}>${Number(val.predictedNext30Days ?? val).toFixed(2)}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ color: '#9ca3af', fontSize: 12 }}>Source: {prediction.source || prediction.method}</div>
                 </div>
-                <div style={{ color: '#9ca3af', fontSize: 12 }}>Source: {prediction.source || prediction.method}</div>
-              </div>
-            ) : (
-              <div style={{ color: '#9ca3af' }}>Your predicted monthly spend will appear here.</div>
-            )}
+              ) : (
+                <div style={{ color: '#9ca3af' }}>Your predicted monthly spend will appear here.</div>
+              )}
+            </div>
           </div>
         </section>
+
+        
       </main>
     </div>
   );
