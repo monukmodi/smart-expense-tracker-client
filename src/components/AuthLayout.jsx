@@ -24,6 +24,8 @@ export default function AuthLayout({ title, subtitle, children }) {
 const styles = {
   wrapper: {
     minHeight: '100dvh',
+    width: '100%',
+    boxSizing: 'border-box',
     display: 'grid',
     placeItems: 'center',
     padding: '24px',

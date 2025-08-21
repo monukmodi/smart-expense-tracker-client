@@ -5,12 +5,19 @@
 
   color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  background-color: #0b1220; /* match app bg */
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  width: 100%;
+  height: 100vh; /* lock viewport height to avoid subtle overflow */
+  overflow: hidden; /* remove both scrollbars on the auth screen */
+  margin: 0; /* ensure no default margins */
 }
 
 a {
@@ -24,10 +31,15 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* Ensure the app can expand to full viewport */
+#root {
+  height: 100vh;
+  width: 100%;
+  display: block;
 }
 
 h1 {
