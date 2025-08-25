@@ -33,9 +33,9 @@ export default function Register() {
     if (!validate()) return;
     setLoading(true);
     try {
-      await registerUser({ name, email, password });
-      setMessage('Account created successfully.');
-      navigate('/dashboard');
+      const { message: m } = await registerUser({ name, email, password });
+      setMessage(m || 'Verification code sent to your email.');
+      navigate(`/verify?email=${encodeURIComponent(email)}`);
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Registration failed.';
       setMessage(msg);

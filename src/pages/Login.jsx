@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { loginUser } from '../services/auth.js';
+import { loginUser, googleLogin } from '../services/auth.js';
 import AuthLayout from '../components/AuthLayout.jsx';
 import Input from '../components/UI/Input.jsx';
 import Button from '../components/UI/Button.jsx';
@@ -12,6 +12,50 @@ export default function Login() {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const googleDivRef = useRef(null);
+
+  useEffect(() => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (!clientId) return; // Not configured
+    const onReady = () => {
+      if (!window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async (response) => {
+          try {
+            const idToken = response.credential;
+            await googleLogin({ idToken });
+            navigate('/dashboard');
+          } catch (err) {
+            const msg = err?.response?.data?.message || err?.message || 'Google sign-in failed';
+            setMessage(msg);
+          }
+        },
+        auto_select: false,
+        ux_mode: 'popup',
+      });
+      if (googleDivRef.current) {
+        window.google.accounts.id.renderButton(googleDivRef.current, {
+          theme: 'outline',
+          size: 'large',
+          text: 'continue_with',
+          shape: 'pill',
+          width: 320,
+        });
+      }
+    };
+    // If script already loaded, onReady immediately; else wait until it loads
+    if (window.google?.accounts?.id) onReady();
+    else {
+      const check = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(check);
+          onReady();
+        }
+      }, 200);
+      return () => clearInterval(check);
+    }
+  }, [navigate]);
 
   const validate = () => {
     const e = {};
@@ -35,6 +79,10 @@ export default function Login() {
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Login failed.';
       setMessage(msg);
+      if (/not verified/i.test(msg)) {
+        // Redirect to verify page if backend indicates unverified account
+        navigate(`/verify?email=${encodeURIComponent(email)}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -77,6 +125,7 @@ export default function Login() {
         <Button type="submit" disabled={loading} style={{ width: '100%', marginTop: 6 }}>
           {loading ? 'Signing in…' : 'Sign in'}
         </Button>
+        <div ref={googleDivRef} style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }} />
         <div style={{ textAlign: 'center', marginTop: 14, color: '#9ca3af', fontSize: 13 }}>
           Don’t have an account?{' '}
           <Link to="/register" style={{ color: '#22d3ee' }}>Register</Link>

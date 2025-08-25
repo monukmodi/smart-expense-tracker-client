@@ -4,6 +4,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Verify from './pages/Verify.jsx';
 import RequireAuth from './routes/RequireAuth.jsx';
 import { ToastProvider } from './components/UI/Toast.jsx';
 
@@ -13,6 +14,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/verify" element={<Verify />} />
         <Route
           path="/dashboard"
           element={
