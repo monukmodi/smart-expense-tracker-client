@@ -79,10 +79,7 @@ export default function Login() {
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Login failed.';
       setMessage(msg);
-      if (/not verified/i.test(msg)) {
-        // Redirect to verify page if backend indicates unverified account
-        navigate(`/verify?email=${encodeURIComponent(email)}`);
-      }
+      // Temporarily disable redirect to verification page
     } finally {
       setLoading(false);
     }
@@ -129,6 +126,26 @@ export default function Login() {
         <div style={{ textAlign: 'center', marginTop: 14, color: '#9ca3af', fontSize: 13 }}>
           Don’t have an account?{' '}
           <Link to="/register" style={{ color: '#22d3ee' }}>Register</Link>
+        </div>
+        <div
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: 'rgba(59,130,246,.08)',
+            border: '1px solid rgba(59,130,246,.25)',
+            color: '#dbeafe',
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Guest/Dummy credentials</div>
+          <div>
+            Email: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', background: 'rgba(30,58,138,.45)', padding: '2px 6px', borderRadius: 6 }}>monu@test.com</span>
+          </div>
+          <div>
+            Password: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', background: 'rgba(30,58,138,.45)', padding: '2px 6px', borderRadius: 6 }}>123456</span>
+          </div>
         </div>
       </form>
     </AuthLayout>
